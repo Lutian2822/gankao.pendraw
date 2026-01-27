@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手绘动画生成器 V3</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+    <h1>DrawPen <span class="badge">V3.3</span></h1>
+    <div style="font-size: 14px; color: #666;">手绘动画生成器</div>
+</header>
+
+<div class="main-container">
+    <!-- Workflow Area -->
+    <div class="workflow-area">
+        
+        <!-- Step 1 -->
+        <div class="workflow-card">
+            <div class="card-header">
+                <div class="card-title"><span class="card-number">1</span> 绘制目标</div>
+            </div>
+            
+            <div class="control-row">
+                <label>绘制模式:</label>
+                <div style="display: flex; gap: 10px;">
+                    <label style="display: flex; align-items: center; cursor: pointer; background: #eee; padding: 5px 10px; border-radius: 4px;">
+                        <input type="radio" name="drawMode" value="line" checked style="margin-right: 5px;"> 线条模式
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer; background: #eee; padding: 5px 10px; border-radius: 4px;">
+                        <input type="radio" name="drawMode" value="color" style="margin-right: 5px;"> 彩色填充
+                    </label>
+                </div>
+                <p style="font-size: 11px; color: #888; margin-top: 5px; line-height: 1.4;">
+                    <span id="modeDesc">适合白底黑线的简笔画，仅绘制线条。</span>
+                </p>
+            </div>
+
+            <div class="control-row">
+                <label for="imageAInput" class="file-upload-btn">
+                    点击上传图片 (Image A)
+                </label>
+                <input type="file" id="imageAInput" accept="image/*">
+            </div>
+            <div class="mini-preview" id="previewAContainer">
+                <canvas id="previewACanvas"></canvas>
+            </div>
+            <div class="control-row" style="margin-top: 15px;">
+                <label>对比度: <span id="contrastVal">0</span></label>
+                <input type="range" id="contrastRange" min="-100" max="100" value="0">
+            </div>
+            <div class="control-row">
+                <label>缩放比例: <span id="scaleVal">1.0</span></label>
+                <input type="range" id="scaleRange" min="0.1" max="2.0" step="0.1" value="1.0">
+            </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="workflow-card">
+            <div class="card-header">
+                <div class="card-title"><span class="card-number">2</span> 手写笔</div>
+            </div>
+            <div class="control-row">
+                <label for="imageBInput" class="file-upload-btn">
+                    点击上传手持笔图片 (Image B)
+                </label>
+                <input type="file" id="imageBInput" accept="image/*">
+            </div>
+            <div class="mini-preview" id="previewBContainer" style="cursor: crosshair;">
+                <canvas id="previewBCanvas"></canvas>
+            </div>
+            <p style="font-size: 12px; text-align: center; color: #888;">上传后请在图片上拖动或点击设定笔尖</p>
+            
+            <div class="control-row" style="margin-top: 15px;">
+                <label>手的大小: <span id="handScaleVal">40</span>%</label>
+                <input type="range" id="handScaleRange" min="10" max="100" value="40">
+            </div>
+            <div class="control-row">
+                <label>手臂防抖</label>
+                <input type="range" id="handSmoothRange" min="0" max="50" value="10">
+            </div>
+            <div class="control-row">
+                <label>底部渐变高度: <span id="handFadeVal">0</span>%</label>
+                <input type="range" id="handFadeRange" min="0" max="100" value="0">
+            </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="workflow-card">
+            <div class="card-header">
+                <div class="card-title"><span class="card-number">3</span> 细节微调</div>
+            </div>
+            
+            <div class="control-row">
+                <label>线条识别阈值: <span id="threshVal">200</span></label>
+                <input type="range" id="thresholdRange" min="0" max="255" value="200">
+            </div>
+
+            <div class="control-row">
+                <label>笔触粗细: <span id="strokeVal">6</span>px</label>
+                <input type="range" id="strokeRange" min="1" max="30" value="6">
+            </div>
+
+            <div class="control-row">
+                <label>平滑处理: <span id="smoothVal">5</span></label>
+                <input type="range" id="smoothRange" min="0" max="20" value="5">
+            </div>
+
+            <div class="control-row">
+                <label>边缘柔化: <span id="blurVal">2</span></label>
+                <input type="range" id="blurRange" min="0" max="20" value="2">
+            </div>
+            
+            <div class="control-row">
+                <label>采样精度 (1=最细): <span id="stepVal">2</span></label>
+                <input type="range" id="stepRange" min="1" max="5" step="1" value="2">
+            </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="workflow-card">
+            <div class="card-header">
+                <div class="card-title"><span class="card-number">4</span> 生成导出</div>
+            </div>
+            <div class="control-row">
+                <label>线条绘制时长: <input type="number" id="durationInput" min="1" max="60" value="5" style="width: 50px; border: none; border-bottom: 1px solid #333; text-align: center;"> 秒</label>
+            </div>
+            <div class="control-row" id="colorDurationRow" style="display: none;">
+                <label>彩色填充时长: <input type="number" id="colorDurationInput" min="1" max="60" value="3" style="width: 50px; border: none; border-bottom: 1px solid #333; text-align: center;"> 秒</label>
+            </div>
+            <div class="control-row" id="repairRow">
+                <label style="display: flex; align-items: center; font-size: 13px;">
+                    <input type="checkbox" id="repairCheck" checked style="margin-right: 5px;"> 
+                    智能补全细节 (<input type="number" id="repairDurationInput" min="0" max="10" value="2" style="width: 30px; border: none; border-bottom: 1px solid #333; text-align: center;">秒)
+                </label>
+            </div>
+            
+            <div class="control-row">
+                <label>画完停留时长: <input type="number" id="holdDurationInput" min="0" max="10" value="2" style="width: 50px; border: none; border-bottom: 1px solid #333; text-align: center;"> 秒</label>
+            </div>
+            <div class="control-row">
+                <label>视频帧率 (FPS): 
+                    <select id="fpsSelect" style="border: none; border-bottom: 1px solid #333; background: transparent;">
+                        <option value="10">10 FPS</option>
+                        <option value="24">24 FPS</option>
+                        <option value="30" selected>30 FPS</option>
+                        <option value="60">60 FPS</option>
+                    </select>
+                </label>
+            </div>
+
+            <button id="generateBtn" class="action-btn">开始生成动画</button>
+        </div>
+
+    </div>
+
+    <!-- Preview Area -->
+    <div class="preview-area">
+        <div class="canvas-wrapper">
+            <canvas id="renderCanvas" width="1200" height="1600"></canvas>
+        </div>
+        <div style="margin-top: 15px; font-size: 12px; color: #999;">
+            实时预览窗口 (1200x1600)
+        </div>
+    </div>
+</div>
+
+<div class="status-indicator" id="statusIndicator">
+    <div class="status-dot"></div>
+    <span id="statusText">正在处理...</span>
+</div>
+
+<div class="video-overlay" id="videoOverlay">
+    <div class="close-overlay" onclick="closeOverlay()">&times;</div>
+    <div class="video-container">
+        <h3 style="margin: 0 0 10px 0;">生成完成!</h3>
+        <video id="resultVideo" controls style="max-width: 100%; max-height: 70vh;"></video>
+        <a id="downloadLink" href="#" class="action-btn" style="text-align: center; text-decoration: none;">下载视频 (MP4)</a>
+    </div>
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
