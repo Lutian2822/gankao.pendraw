@@ -13,6 +13,7 @@ document.getElementById('scaleRange').addEventListener('input', (e) => {
 document.getElementById('thresholdRange').addEventListener('input', (e) => {
     updateLabel('threshVal', e.target.value);
     updatePreviewA(); // Update preview to show threshold effect
+    drawCompositionFrame({ previewThreshold: true });
 });
 document.getElementById('strokeRange').addEventListener('input', (e) => updateLabel('strokeVal', e.target.value));
 document.getElementById('stepRange').addEventListener('input', (e) => updateLabel('stepVal', e.target.value));
@@ -24,27 +25,14 @@ document.getElementById('handScaleRange').addEventListener('input', (e) => {
     drawCompositionFrame();
 });
 
+document.getElementById('handSmoothRange').addEventListener('input', (e) => {
+    updateLabel('handSmoothVal', e.target.value);
+});
+
 document.getElementById('handFadeRange').addEventListener('input', (e) => {
     updateLabel('handFadeVal', e.target.value);
     updateProcessedHand();
     drawCompositionFrame();
-});
-
-// Mode Switching
-const modeRadios = document.querySelectorAll('input[name="drawMode"]');
-const modeDesc = document.getElementById('modeDesc');
-const colorDurationRow = document.getElementById('colorDurationRow');
-
-modeRadios.forEach(radio => {
-    radio.addEventListener('change', (e) => {
-        if (e.target.value === 'color') {
-            modeDesc.textContent = "适合彩色图片，先绘制黑线轮廓，再进行彩色涂抹。";
-            colorDurationRow.style.display = 'block';
-        } else {
-            modeDesc.textContent = "适合白底黑线的简笔画，仅绘制线条。";
-            colorDurationRow.style.display = 'none';
-        }
-    });
 });
 
 // --- Core Logic (Migrated from V2) ---
@@ -52,16 +40,38 @@ modeRadios.forEach(radio => {
 // Elements
 const imageAInput = document.getElementById('imageAInput');
 const previewACanvas = document.getElementById('previewACanvas');
+const uploadAZone = document.getElementById('uploadAZone');
+const imageACard = document.getElementById('imageACard');
 const imageBInput = document.getElementById('imageBInput');
 const previewBCanvas = document.getElementById('previewBCanvas');
+const uploadBZone = document.getElementById('uploadBZone');
+const penPreviewWrapper = document.getElementById('penPreviewWrapper');
+const imageBCard = document.getElementById('imageBCard');
 const penTipMarker = document.getElementById('penTipMarker');
 const renderCanvas = document.getElementById('renderCanvas');
 const generateBtn = document.getElementById('generateBtn');
+const testBtn = document.getElementById('testBtn');
+const penRelocateBtn = document.getElementById('penRelocateBtn');
+const drawTemplateBtn = document.getElementById('drawTemplateBtn');
+const penTemplateBtn = document.getElementById('penTemplateBtn');
+const clearImageABtn = document.getElementById('clearImageABtn');
+const clearImageBBtn = document.getElementById('clearImageBBtn');
 const statusIndicator = document.getElementById('statusIndicator');
 const statusText = document.getElementById('statusText');
 const videoOverlay = document.getElementById('videoOverlay');
 const resultVideo = document.getElementById('resultVideo');
 const downloadLink = document.getElementById('downloadLink');
+const templateModal = document.getElementById('templateModal');
+const templateGrid = document.getElementById('templateGrid');
+const templateModalTitle = document.getElementById('templateModalTitle');
+const templateModalClose = document.getElementById('templateModalClose');
+const colorFillCheck = document.getElementById('colorFillCheck');
+const colorDurationInput = document.getElementById('colorDurationInput');
+const colorFillRow = document.getElementById('colorFillRow');
+const penTipModal = document.getElementById('penTipModal');
+const penTipCancel = document.getElementById('penTipCancel');
+const penTipConfirm = document.getElementById('penTipConfirm');
+const penTipCanvas = document.getElementById('penTipCanvas');
 
 // State
 let imgA = null;
@@ -85,21 +95,278 @@ function closeOverlay() {
     videoOverlay.classList.remove('active');
 }
 
-// --- Image A ---
-imageAInput.addEventListener('change', (e) => {
+function openTemplateModal(type) {
+    templateModalTitle.textContent = type === 'draw' ? '选择模板图' : '选择画笔图';
+    templateGrid.innerHTML = '';
+    const basePath = type === 'draw' ? 'resources/drawPictures/' : 'resources/penPictures/';
+    const prefixes = type === 'draw' ? ['bLine', 'color'] : ['pen'];
+    const maxIndex = 50;
+    prefixes.forEach((prefix) => {
+        for (let i = 1; i <= maxIndex; i++) {
+            const src = `${basePath}${prefix}${i}.png`;
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'template-item';
+            const img = document.createElement('img');
+            img.src = src;
+            img.addEventListener('error', () => {
+                if (item.parentNode) item.parentNode.removeChild(item);
+            });
+            item.appendChild(img);
+            item.addEventListener('click', () => {
+                if (type === 'draw') {
+                    setImageAFromUrl(src);
+                } else {
+                    setImageBFromUrl(src);
+                }
+                closeTemplateModal();
+            });
+            templateGrid.appendChild(item);
+        }
+    });
+    templateModal.classList.add('active');
+}
+
+function closeTemplateModal() {
+    templateModal.classList.remove('active');
+}
+
+templateModalClose.addEventListener('click', closeTemplateModal);
+templateModal.addEventListener('click', (e) => {
+    if (e.target === templateModal) closeTemplateModal();
+});
+if (drawTemplateBtn) {
+    drawTemplateBtn.addEventListener('click', () => openTemplateModal('draw'));
+}
+if (penTemplateBtn) {
+    penTemplateBtn.addEventListener('click', () => openTemplateModal('pen'));
+}
+if (uploadAZone) {
+    uploadAZone.addEventListener('click', () => imageAInput.click());
+}
+if (uploadBZone) {
+    uploadBZone.addEventListener('click', () => imageBInput.click());
+}
+if (colorFillCheck) {
+    const updateColorFillUI = () => {
+        const enabled = colorFillCheck.checked;
+        if (colorDurationInput) colorDurationInput.disabled = !enabled;
+        if (colorFillRow) colorFillRow.classList.toggle('disabled', !enabled);
+    };
+    colorFillCheck.addEventListener('change', updateColorFillUI);
+    updateColorFillUI();
+}
+function renderPenTipModalCanvas() {
+    if (!penTipCanvas || !imgB) return;
+    const maxW = 360;
+    const maxH = 260;
+    const scale = Math.min(maxW / imgB.width, maxH / imgB.height, 1);
+    const w = Math.max(1, Math.round(imgB.width * scale));
+    const h = Math.max(1, Math.round(imgB.height * scale));
+    penTipCanvas.width = w;
+    penTipCanvas.height = h;
+    const ctx = penTipCanvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(imgB, 0, 0, w, h);
+
+    const markerX = penTip.x * scale;
+    const markerY = penTip.y * scale;
+    ctx.beginPath();
+    ctx.strokeStyle = '#ff6b6b';
+    ctx.lineWidth = 2;
+    ctx.arc(markerX, markerY, 6, 0, Math.PI * 2);
+    ctx.moveTo(markerX - 12, markerY);
+    ctx.lineTo(markerX + 12, markerY);
+    ctx.moveTo(markerX, markerY - 12);
+    ctx.lineTo(markerX, markerY + 12);
+    ctx.stroke();
+}
+
+function openPenTipModal() {
+    if (!penTipModal) return;
+    penTipModal.classList.add('active');
+    renderPenTipModalCanvas();
+}
+function closePenTipModal() {
+    if (!penTipModal) return;
+    penTipModal.classList.remove('active');
+}
+if (penTipCancel) penTipCancel.addEventListener('click', closePenTipModal);
+if (penTipConfirm) penTipConfirm.addEventListener('click', closePenTipModal);
+if (penTipModal) {
+    penTipModal.addEventListener('click', (e) => {
+        if (e.target === penTipModal) closePenTipModal();
+    });
+}
+if (penRelocateBtn) {
+    penRelocateBtn.addEventListener('click', () => {
+        if (!imgB) return;
+        penTip = { x: imgB.width / 2, y: imgB.height / 2 };
+        updatePreviewB();
+        openPenTipModal();
+    });
+}
+if (clearImageABtn) {
+    clearImageABtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearImageA();
+    });
+}
+if (clearImageBBtn) {
+    clearImageBBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearImageB();
+    });
+}
+if (penTipCanvas) {
+    const handleModalTipInput = (e) => {
+        if (!imgB) return;
+        e.preventDefault();
+        const rect = penTipCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        const scaleX = imgB.width / rect.width;
+        const scaleY = imgB.height / rect.height;
+        let imgX = x * scaleX;
+        let imgY = y * scaleY;
+        imgX = Math.max(0, Math.min(imgB.width, imgX));
+        imgY = Math.max(0, Math.min(imgB.height, imgY));
+        penTip.x = imgX;
+        penTip.y = imgY;
+        updatePreviewB();
+        renderPenTipModalCanvas();
+    };
+    penTipCanvas.addEventListener('mousedown', handleModalTipInput);
+    penTipCanvas.addEventListener('touchstart', handleModalTipInput, { passive: false });
+}
+
+function handleImageAFile(file) {
     if (animationId) cancelAnimationFrame(animationId);
-    const file = e.target.files[0];
-    if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
         imgA = new Image();
         imgA.onload = () => {
             updatePreviewA();
             drawCompositionFrame();
+            if (uploadAZone) uploadAZone.classList.add('has-image');
         };
         imgA.src = event.target.result;
     };
     reader.readAsDataURL(file);
+}
+
+function handleImageBFile(file) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        imgB = new Image();
+        imgB.onload = () => {
+            penTip = { x: imgB.width / 2, y: imgB.height / 2 };
+            updateProcessedHand();
+            updatePreviewB();
+            drawCompositionFrame();
+            if (uploadBZone) uploadBZone.classList.add('has-image');
+            if (penPreviewWrapper) penPreviewWrapper.classList.add('has-image');
+            openPenTipModal();
+        };
+        imgB.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearImageA() {
+    imgA = null;
+    if (imageAInput) imageAInput.value = '';
+    if (previewACanvas) {
+        previewACanvas.width = 1;
+        previewACanvas.height = 1;
+    }
+    if (uploadAZone) uploadAZone.classList.remove('has-image');
+    drawCompositionFrame();
+}
+
+function clearImageB() {
+    imgB = null;
+    processedHandCanvas = null;
+    penTip = { x: 0, y: 0 };
+    if (imageBInput) imageBInput.value = '';
+    if (previewBCanvas) {
+        previewBCanvas.width = 1;
+        previewBCanvas.height = 1;
+    }
+    if (penTipCanvas) {
+        penTipCanvas.width = 1;
+        penTipCanvas.height = 1;
+    }
+    if (uploadBZone) uploadBZone.classList.remove('has-image');
+    if (penPreviewWrapper) penPreviewWrapper.classList.remove('has-image');
+    drawCompositionFrame();
+}
+
+function setImageAFromUrl(src) {
+    const image = new Image();
+    image.onload = () => {
+        imgA = image;
+        updatePreviewA();
+        drawCompositionFrame();
+        if (uploadAZone) uploadAZone.classList.add('has-image');
+    };
+    image.src = src;
+}
+
+function setImageBFromUrl(src) {
+    const image = new Image();
+    image.onload = () => {
+        imgB = image;
+        penTip = { x: image.width / 2, y: image.height / 2 };
+        updateProcessedHand();
+        updatePreviewB();
+        drawCompositionFrame();
+        if (uploadBZone) uploadBZone.classList.add('has-image');
+        if (penPreviewWrapper) penPreviewWrapper.classList.add('has-image');
+        openPenTipModal();
+    };
+    image.src = src;
+}
+
+function setupDropZone(card, onFile) {
+    let depth = 0;
+    card.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        depth += 1;
+        card.classList.add('drag-active');
+    });
+    card.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+    card.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        depth -= 1;
+        if (depth <= 0) {
+            depth = 0;
+            card.classList.remove('drag-active');
+        }
+    });
+    card.addEventListener('drop', (e) => {
+        e.preventDefault();
+        depth = 0;
+        card.classList.remove('drag-active');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            onFile(file);
+        }
+    });
+}
+
+if (imageACard) setupDropZone(imageACard, handleImageAFile);
+if (imageBCard) setupDropZone(imageBCard, handleImageBFile);
+
+// --- Image A ---
+imageAInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    handleImageAFile(file);
 });
 
 function updatePreviewA() {
@@ -133,24 +400,14 @@ function updatePreviewA() {
         }
     }
     ctx.putImageData(imageData, 0, 0);
+    if (uploadAZone) uploadAZone.classList.add('has-image');
 }
 
 // --- Image B ---
 imageBInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        imgB = new Image();
-        imgB.onload = () => {
-            penTip = { x: 0, y: imgB.height }; // Default tip
-            updateProcessedHand();
-            updatePreviewB();
-            drawCompositionFrame();
-        };
-        imgB.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
+    handleImageBFile(file);
 });
 
 function updateProcessedHand() {
@@ -212,6 +469,11 @@ function updatePreviewB() {
     ctx.font = '12px Roboto Mono';
     ctx.fillStyle = '#ff6b6b';
     ctx.fillText("TIP", markerX + 8, markerY - 8);
+    if (uploadBZone) uploadBZone.classList.add('has-image');
+    if (penPreviewWrapper) penPreviewWrapper.classList.add('has-image');
+    if (penTipModal && penTipModal.classList.contains('active')) {
+        renderPenTipModalCanvas();
+    }
 }
 
 // Pen Tip Interaction (Drag & Click)
@@ -273,7 +535,7 @@ window.addEventListener('touchend', () => {
 });
 
 // --- Composition ---
-function drawCompositionFrame() {
+function drawCompositionFrame(options = {}) {
     const ctx = renderCanvas.getContext('2d');
     ctx.globalCompositeOperation = 'source-over'; // Reset composite operation to avoid state pollution
     ctx.fillStyle = "white";
@@ -293,6 +555,29 @@ function drawCompositionFrame() {
         ctx.filter = `contrast(${100 + contrast}%)`;
         ctx.drawImage(imgA, x, y, w, h);
         ctx.filter = 'none';
+
+        if (options.previewThreshold === true) {
+            const threshold = parseInt(document.getElementById('thresholdRange').value);
+            const ix = Math.max(0, Math.round(x));
+            const iy = Math.max(0, Math.round(y));
+            const iw = Math.max(1, Math.round(w));
+            const ih = Math.max(1, Math.round(h));
+            const imageData = ctx.getImageData(ix, iy, iw, ih);
+            const data = imageData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
+                if (brightness < threshold) {
+                    data[i] = 0;
+                    data[i+1] = 0;
+                    data[i+2] = 0;
+                } else {
+                    data[i] = 255;
+                    data[i+1] = 255;
+                    data[i+2] = 255;
+                }
+            }
+            ctx.putImageData(imageData, ix, iy);
+        }
     }
 
     if (processedHandCanvas) {
@@ -316,40 +601,83 @@ function drawCompositionFrame() {
 }
 
 // --- Path Finding & Smoothing (Optimized V2 Logic) ---
-function getDrawingPath(ctx, width, height, threshold, step) {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-    const points = [];
-    
-    for (let y = 0; y < height; y += step) { 
-        for (let x = 0; x < width; x += step) {
-            const i = (y * width + x) * 4;
-            const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
-            if (brightness < threshold) {
-                points.push({x, y, v: false});
-            }
+function splitIntoComponents(points, step, refPoint) {
+    const pointMap = new Map();
+    points.forEach((p, index) => {
+        pointMap.set(`${p.x},${p.y}`, index);
+    });
+    const visited = new Array(points.length).fill(false);
+    const components = [];
+    const offsets = [];
+    for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+            if (dx !== 0 || dy !== 0) offsets.push([dx * step, dy * step]);
         }
     }
-    
-    if (points.length === 0) return [];
+    for (let i = 0; i < points.length; i++) {
+        if (visited[i]) continue;
+        const queue = [i];
+        visited[i] = true;
+        const component = [];
+        let minX = Infinity;
+        let minY = Infinity;
+        let sumX = 0;
+        let sumY = 0;
+        while (queue.length) {
+            const idx = queue.pop();
+            const p = points[idx];
+            component.push({ x: p.x, y: p.y, v: false });
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            sumX += p.x;
+            sumY += p.y;
+            for (const [ox, oy] of offsets) {
+                const nx = p.x + ox;
+                const ny = p.y + oy;
+                const key = `${nx},${ny}`;
+                const nIdx = pointMap.get(key);
+                if (nIdx !== undefined && !visited[nIdx]) {
+                    visited[nIdx] = true;
+                    queue.push(nIdx);
+                }
+            }
+        }
+        const count = component.length || 1;
+        components.push({ points: component, minX, minY, centerX: sumX / count, centerY: sumY / count });
+    }
+    components.sort((a, b) => (a.centerX - b.centerX) || (a.centerY - b.centerY));
+    return components.map(c => c.points);
+}
 
+function sortPointsNatural(points, step) {
+    if (points.length === 0) return [];
+    let startIndex = 0;
+    let minX = Infinity;
+    let minY = Infinity;
+    points.forEach((p, index) => {
+        if (p.x < minX || (p.x === minX && p.y < minY)) {
+            minX = p.x;
+            minY = p.y;
+            startIndex = index;
+        }
+    });
     const sortedPath = [];
-    let current = points[0];
+    let current = points[startIndex];
     current.v = true;
-    current.jump = true; // First point is a jump
+    current.jump = true;
     sortedPath.push(current);
     
     const bucketSize = 50;
     const grid = {};
     points.forEach(p => {
-        const key = `${Math.floor(p.x/bucketSize)},${Math.floor(p.y/bucketSize)}`;
+        const key = `${Math.floor(p.x / bucketSize)},${Math.floor(p.y / bucketSize)}`;
         if (!grid[key]) grid[key] = [];
         grid[key].push(p);
     });
     
     let count = 0;
     const total = points.length;
-    let lastScanIndex = 0; // Optimization for linear scan
+    let lastScanIndex = 0;
     
     while (count < total - 1) {
         let minDist = Infinity;
@@ -359,17 +687,16 @@ function getDrawingPath(ctx, width, height, threshold, step) {
         const gx = Math.floor(current.x / bucketSize);
         const gy = Math.floor(current.y / bucketSize);
         
-        // Search in expanding rings
         for (let r = 0; r <= 2; r++) {
             for (let dy = -r; dy <= r; dy++) {
                 for (let dx = -r; dx <= r; dx++) {
-                    const key = `${gx+dx},${gy+dy}`;
+                    const key = `${gx + dx},${gy + dy}`;
                     if (grid[key]) {
                         const bucket = grid[key];
                         for (let i = 0; i < bucket.length; i++) {
                             const p = bucket[i];
                             if (!p.v) {
-                                const dist = (p.x - current.x)**2 + (p.y - current.y)**2;
+                                const dist = (p.x - current.x) ** 2 + (p.y - current.y) ** 2;
                                 if (dist < minDist) {
                                     minDist = dist;
                                     nextPoint = p;
@@ -380,57 +707,83 @@ function getDrawingPath(ctx, width, height, threshold, step) {
                     }
                 }
             }
-            // If found in this ring, and it's reasonably close, stop searching outer rings
-            if (found && minDist < 2500) break; 
+            if (found && minDist < 2500) break;
         }
         
         if (nextPoint) {
             nextPoint.v = true;
-            nextPoint.jump = false; // Connected
+            nextPoint.jump = false;
             sortedPath.push(nextPoint);
             current = nextPoint;
             count++;
         } else {
             let jumpFound = false;
-            // Optimized scan starting from last known position
             for (let i = lastScanIndex; i < points.length; i++) {
-                 if (!points[i].v) {
-                     current = points[i];
-                     current.v = true;
-                     current.jump = true; // Jumped
-                     sortedPath.push(current);
-                     count++;
-                     jumpFound = true;
-                     lastScanIndex = i + 1; // Update scan index
-                     break;
-                 }
+                if (!points[i].v) {
+                    current = points[i];
+                    current.v = true;
+                    current.jump = true;
+                    sortedPath.push(current);
+                    count++;
+                    jumpFound = true;
+                    lastScanIndex = i + 1;
+                    break;
+                }
             }
             
-            // If not found from lastScanIndex, wrap around (just in case, though logically shouldn't happen if sorted)
             if (!jumpFound && lastScanIndex > 0) {
-                 for (let i = 0; i < lastScanIndex; i++) {
-                     if (!points[i].v) {
-                         current = points[i];
-                         current.v = true;
-                         current.jump = true;
-                         sortedPath.push(current);
-                         count++;
-                         jumpFound = true;
-                         lastScanIndex = i + 1;
-                         break;
-                     }
-                 }
+                for (let i = 0; i < lastScanIndex; i++) {
+                    if (!points[i].v) {
+                        current = points[i];
+                        current.v = true;
+                        current.jump = true;
+                        sortedPath.push(current);
+                        count++;
+                        jumpFound = true;
+                        lastScanIndex = i + 1;
+                        break;
+                    }
+                }
             }
-
+            
             if (!jumpFound) break;
         }
     }
     return sortedPath;
 }
 
-function smoothPath(path, iterations) {
-    if (iterations <= 0 || path.length < 3) return path;
-    let currentPath = path.map(p => ({...p}));
+function getDrawingPath(ctx, width, height, threshold, step, refPoint) {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+    const points = [];
+    
+    for (let y = 0; y < height; y += step) { 
+        for (let x = 0; x < width; x += step) {
+            const i = (y * width + x) * 4;
+            const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
+            if (brightness < threshold) {
+                points.push({x, y});
+            }
+        }
+    }
+    
+    if (points.length === 0) return [];
+
+    const components = splitIntoComponents(points, step, refPoint);
+    const mergedPath = [];
+    components.forEach((component) => {
+        const sorted = sortPointsNatural(component, step);
+        if (sorted.length > 0) {
+            sorted[0].jump = true;
+        }
+        mergedPath.push(...sorted);
+    });
+    return mergedPath;
+}
+
+function smoothSegment(segment, iterations) {
+    if (iterations <= 0 || segment.length < 3) return segment;
+    let currentPath = segment.map(p => ({ x: p.x, y: p.y, jump: p.jump }));
     for (let it = 0; it < iterations; it++) {
         const newPath = [];
         newPath.push(currentPath[0]);
@@ -440,30 +793,57 @@ function smoothPath(path, iterations) {
             const next = currentPath[i+1];
             newPath.push({
                 x: (prev.x + curr.x + next.x) / 3,
-                y: (prev.y + curr.y + next.y) / 3
+                y: (prev.y + curr.y + next.y) / 3,
+                jump: false
             });
         }
         newPath.push(currentPath[currentPath.length - 1]);
         currentPath = newPath;
+        currentPath[0].jump = segment[0].jump;
     }
     return currentPath;
 }
 
+function smoothPath(path, iterations) {
+    if (iterations <= 0 || path.length < 3) return path;
+    const segments = [];
+    let current = [];
+    path.forEach((p, index) => {
+        if (index === 0 || p.jump) {
+            if (current.length) segments.push(current);
+            current = [{ x: p.x, y: p.y, jump: true }];
+        } else {
+            current.push({ x: p.x, y: p.y, jump: false });
+        }
+    });
+    if (current.length) segments.push(current);
+    const smoothed = [];
+    segments.forEach(segment => {
+        smoothed.push(...smoothSegment(segment, iterations));
+    });
+    return smoothed;
+}
+
 function getColoringPath(ctx, width, height, step = 40) {
-    // Zig-zag scan for non-white pixels
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
     const points = [];
     
-    // Find bounding box of content
     let minX = width, minY = height, maxX = 0, maxY = 0;
     let hasContent = false;
     
-    for (let y = 0; y < height; y += 10) {
-        for (let x = 0; x < width; x += 10) {
+    const scanStride = 4;
+    for (let y = 0; y < height; y += scanStride) {
+        for (let x = 0; x < width; x += scanStride) {
             const i = (y * width + x) * 4;
-            // Check if not white (simple check)
-            if (data[i] < 250 || data[i+1] < 250 || data[i+2] < 250) {
+            const r = data[i];
+            const g = data[i+1];
+            const b = data[i+2];
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const saturation = max - min;
+            const brightness = (r + g + b) / 3;
+            if (saturation > 8 && brightness < 250) {
                 minX = Math.min(minX, x);
                 maxX = Math.max(maxX, x);
                 minY = Math.min(minY, y);
@@ -475,32 +855,101 @@ function getColoringPath(ctx, width, height, step = 40) {
     
     if (!hasContent) return [];
     
-    // Add padding
     minX = Math.max(0, minX - step);
     maxX = Math.min(width, maxX + step);
     minY = Math.max(0, minY - step);
     maxY = Math.min(height, maxY + step);
     
-    // Generate zig-zag path
-    const interpolateStep = 10; // Add points every 10px for smoother animation
+    const areaW = Math.max(1, maxX - minX);
+    const areaH = Math.max(1, maxY - minY);
+    const rowStep = Math.min(step, Math.max(12, Math.round(Math.min(areaW, areaH) / 7)));
+    const interpolateStep = Math.max(4, Math.round(rowStep / 3));
     
-    for (let y = minY; y <= maxY; y += step) {
-        if (((y - minY) / step) % 2 === 0) {
-            // Left to Right
-            for (let x = minX; x <= maxX; x += interpolateStep) {
-                points.push({x: x, y: y});
+    for (let y = minY; y <= maxY; y += rowStep) {
+        const forward = ((y - minY) / rowStep) % 2 === 0;
+        const xStart = forward ? minX : maxX;
+        const xEnd = forward ? maxX : minX;
+        const xStep = forward ? interpolateStep : -interpolateStep;
+        let inRun = false;
+        let lastValidX = null;
+        
+        for (let x = xStart; forward ? x <= xEnd : x >= xEnd; x += xStep) {
+            const xi = Math.max(0, Math.min(width - 1, Math.round(x)));
+            const yi = Math.max(0, Math.min(height - 1, Math.round(y)));
+            const i = (yi * width + xi) * 4;
+            const r = data[i];
+            const g = data[i+1];
+            const b = data[i+2];
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const saturation = max - min;
+            const brightness = (r + g + b) / 3;
+            const colored = saturation > 8 && brightness < 250;
+            if (colored) {
+                points.push({x: xi, y: yi});
+                inRun = true;
+                lastValidX = xi;
+            } else if (inRun && lastValidX !== null) {
+                points.push({x: lastValidX, y: yi});
+                inRun = false;
             }
-            points.push({x: maxX, y: y}); // Ensure end point
-        } else {
-            // Right to Left
-            for (let x = maxX; x >= minX; x -= interpolateStep) {
-                points.push({x: x, y: y});
-            }
-            points.push({x: minX, y: y}); // Ensure end point
+        }
+        if (inRun && lastValidX !== null) {
+            points.push({x: lastValidX, y: Math.round(y)});
         }
     }
     
     return points;
+}
+
+function resamplePath(points, targetCount) {
+    if (points.length <= 1 || points.length >= targetCount) return points;
+    const result = [];
+    const segments = points.length - 1;
+    const extraTotal = targetCount - points.length;
+    const baseExtra = Math.floor(extraTotal / segments);
+    let remainder = extraTotal % segments;
+    for (let i = 0; i < segments; i++) {
+        const a = points[i];
+        const b = points[i + 1];
+        if (i === 0) result.push(a);
+        let extra = baseExtra + (remainder > 0 ? 1 : 0);
+        if (remainder > 0) remainder--;
+        for (let k = 0; k < extra; k++) {
+            const t = (k + 1) / (extra + 1);
+            result.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+        }
+        result.push(b);
+    }
+    return result;
+}
+
+function applyTempOutlineToLineArt(ctx, width, height, originalData) {
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+    const outlineSaturationThreshold = 18;
+    const edgeThreshold = 60;
+    for (let yPos = 0; yPos < height - 1; yPos++) {
+        for (let xPos = 0; xPos < width - 1; xPos++) {
+            const i = (yPos * width + xPos) * 4;
+            const r = originalData[i];
+            const g = originalData[i + 1];
+            const b = originalData[i + 2];
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const saturation = max - min;
+            const brightness = (r + g + b) / 3;
+            if (saturation <= outlineSaturationThreshold || brightness >= 250) continue;
+            const iRight = i + 4;
+            const iDown = i + width * 4;
+            const diffRight = Math.abs(r - originalData[iRight]) + Math.abs(g - originalData[iRight + 1]) + Math.abs(b - originalData[iRight + 2]);
+            const diffDown = Math.abs(r - originalData[iDown]) + Math.abs(g - originalData[iDown + 1]) + Math.abs(b - originalData[iDown + 2]);
+            if (Math.max(diffRight, diffDown) > edgeThreshold) {
+                data[i] = 0; data[i + 1] = 0; data[i + 2] = 0;
+            }
+        }
+    }
+    ctx.putImageData(imgData, 0, 0);
 }
 
 // --- Generation ---
@@ -509,13 +958,26 @@ generateBtn.addEventListener('click', async () => {
     if (!imgB) { alert("请先上传手写笔图片"); return; }
     
     generateBtn.disabled = true;
+    testBtn.disabled = true;
     showStatus("正在计算绘制路径...");
     
-    setTimeout(() => startGeneration(), 100);
+    setTimeout(() => startGeneration({ record: true }), 100);
 });
 
-async function startGeneration() {
+testBtn.addEventListener('click', async () => {
+    if (!imgA) { alert("请先上传目标图片"); return; }
+    if (!imgB) { alert("请先上传手写笔图片"); return; }
+
+    generateBtn.disabled = true;
+    testBtn.disabled = true;
+    showStatus("正在预览动画...");
+
+    setTimeout(() => startGeneration({ record: false }), 100);
+});
+
+async function startGeneration(options = {}) {
     if (animationId) clearTimeout(animationId);
+    const record = options.record !== false;
     const ctx = renderCanvas.getContext('2d');
     const width = renderCanvas.width;
     const height = renderCanvas.height;
@@ -525,13 +987,101 @@ async function startGeneration() {
     const step = parseInt(document.getElementById('stepRange').value);
     const smoothIterations = parseInt(document.getElementById('smoothRange').value);
     const blurAmount = parseInt(document.getElementById('blurRange').value);
-    const drawMode = document.querySelector('input[name="drawMode"]:checked').value;
+    const drawMode = colorFillCheck && colorFillCheck.checked ? 'color' : 'line';
+    const tempOutlineEnabled = document.getElementById('tempOutlineCheck')?.checked === true;
     
     // 1. Prepare
     drawCompositionFrame();
     
+    const targetCanvas = document.createElement('canvas');
+    targetCanvas.width = width;
+    targetCanvas.height = height;
+    const tCtx = targetCanvas.getContext('2d');
+    
+    tCtx.fillStyle = "white";
+    tCtx.fillRect(0, 0, width, height);
+    
+    const lineArtCanvas = document.createElement('canvas');
+    lineArtCanvas.width = width;
+    lineArtCanvas.height = height;
+    const lCtx = lineArtCanvas.getContext('2d');
+    lCtx.fillStyle = "white";
+    lCtx.fillRect(0, 0, width, height);
+    
+    if (imgA) {
+        const scale = parseFloat(document.getElementById('scaleRange').value);
+        const fitScale = Math.min(width / imgA.width, height / imgA.height) * 0.8;
+        const finalScale = fitScale * scale;
+        const w = imgA.width * finalScale;
+        const h = imgA.height * finalScale;
+        const x = (width - w) / 2;
+        const y = (height - h) / 2;
+        const contrast = parseInt(document.getElementById('contrastRange').value);
+        
+        tCtx.filter = `contrast(${100 + contrast}%)`;
+        tCtx.drawImage(imgA, x, y, w, h);
+        tCtx.filter = 'none';
+        
+        lCtx.drawImage(imgA, x, y, w, h);
+        const originalImageData = lCtx.getImageData(0, 0, width, height);
+        const originalData = originalImageData.data;
+        
+        if (drawMode === 'color') {
+            const imgData = lCtx.getImageData(0, 0, width, height);
+            const data = imgData.data;
+            const originalDataCopy = new Uint8ClampedArray(originalData);
+            const saturationThreshold = 30;
+            const brightnessThreshold = 200;
+            const outlineSaturationThreshold = 18;
+            const edgeThreshold = 60;
+            
+            for (let yPos = 0; yPos < height; yPos++) {
+                for (let xPos = 0; xPos < width; xPos++) {
+                    const i = (yPos * width + xPos) * 4;
+                    const r = originalDataCopy[i];
+                    const g = originalDataCopy[i + 1];
+                    const b = originalDataCopy[i + 2];
+                    const max = Math.max(r, g, b);
+                    const min = Math.min(r, g, b);
+                    const saturation = max - min;
+                    const brightness = (r + g + b) / 3;
+                    
+                    let outline = false;
+                    if (tempOutlineEnabled && xPos < width - 1 && yPos < height - 1) {
+                        const iRight = i + 4;
+                        const iDown = i + width * 4;
+                        const diffRight = Math.abs(r - originalDataCopy[iRight]) + Math.abs(g - originalDataCopy[iRight + 1]) + Math.abs(b - originalDataCopy[iRight + 2]);
+                        const diffDown = Math.abs(r - originalDataCopy[iDown]) + Math.abs(g - originalDataCopy[iDown + 1]) + Math.abs(b - originalDataCopy[iDown + 2]);
+                        outline = Math.max(diffRight, diffDown) > edgeThreshold && saturation > outlineSaturationThreshold && brightness < 250;
+                    }
+                    
+                    if (outline) {
+                        data[i] = 0; data[i + 1] = 0; data[i + 2] = 0;
+                    } else if (saturation > saturationThreshold || brightness > brightnessThreshold) {
+                        data[i] = 255; data[i + 1] = 255; data[i + 2] = 255;
+                    } else {
+                        const darkVal = brightness < 100 ? 0 : brightness;
+                        data[i] = darkVal; data[i + 1] = darkVal; data[i + 2] = darkVal;
+                    }
+                }
+            }
+            lCtx.putImageData(imgData, 0, 0);
+        } else {
+            lCtx.filter = `contrast(${100 + contrast}%)`;
+            lCtx.clearRect(0, 0, width, height);
+            lCtx.fillStyle = "white";
+            lCtx.fillRect(0, 0, width, height);
+            lCtx.drawImage(imgA, x, y, w, h);
+            lCtx.filter = 'none';
+            if (tempOutlineEnabled) {
+                applyTempOutlineToLineArt(lCtx, width, height, originalData);
+            }
+        }
+    }
+
     // 2. Path Finding
-    let path = getDrawingPath(ctx, width, height, threshold, step);
+    const penOrigin = { x: width / 2, y: height / 2 };
+    let path = getDrawingPath(lCtx, width, height, threshold, step, penOrigin);
     let colorPath = [];
     
     if (path.length === 0) {
@@ -549,9 +1099,9 @@ async function startGeneration() {
     }
     
     if (drawMode === 'color') {
-            showStatus("正在计算填充路径...");
-            await new Promise(r => setTimeout(r, 10));
-            colorPath = getColoringPath(ctx, width, height, 50); // 50px brush
+        showStatus("正在计算填充路径...");
+        await new Promise(r => setTimeout(r, 10));
+        colorPath = getColoringPath(tCtx, width, height, 50);
     }
 
     // 3. Setup Animation
@@ -561,14 +1111,14 @@ async function startGeneration() {
     
     let coloringFrames = 0;
     if (drawMode === 'color') {
-            const colorDurationSec = parseInt(document.getElementById('colorDurationInput').value);
-            coloringFrames = colorDurationSec * fps;
+        const colorDurationSec = parseInt(colorDurationInput ? colorDurationInput.value : 0);
+        coloringFrames = colorDurationSec * fps;
     }
     // Auto-Repair Logic (New Feature)
-    const isAutoRepairEnabled = document.getElementById('repairCheck').checked && drawMode === 'line';
+    const isAutoRepairEnabled = document.getElementById('repairCheck').checked;
     let repairFrames = 0;
     if (isAutoRepairEnabled) {
-        const repairDurationSec = parseFloat(document.getElementById('repairDurationInput').value) || 2;
+        const repairDurationSec = 0.6;
         repairFrames = repairDurationSec * fps;
     }
     
@@ -576,7 +1126,14 @@ async function startGeneration() {
     const holdFrames = holdDurationSec * fps;
     const totalFrames = drawingFrames + coloringFrames + repairFrames + holdFrames;
     const pointsPerFrame = Math.ceil(path.length / drawingFrames);
-    const colorPointsPerFrame = colorPath.length > 0 ? Math.ceil(colorPath.length / coloringFrames) : 0;
+    let colorProgress = 0;
+    let colorAdvance = 0;
+    if (drawMode === 'color' && coloringFrames > 0 && colorPath.length > 0) {
+        if (colorPath.length < coloringFrames) {
+            colorPath = resamplePath(colorPath, coloringFrames);
+        }
+        colorAdvance = colorPath.length / coloringFrames;
+    }
     
     // Hand Scale Logic
     let handW, handH, tipX, tipY;
@@ -590,42 +1147,43 @@ async function startGeneration() {
     }
 
     // Recorder
-    const stream = renderCanvas.captureStream(fps);
-    
-    // Improved MimeType Selection for AE Compatibility
-    let mimeType = "video/webm"; // Default fallback
-    if (MediaRecorder.isTypeSupported("video/mp4; codecs=avc1.4d002a")) {
-        mimeType = "video/mp4; codecs=avc1.4d002a"; // H.264 High Profile
-    } else if (MediaRecorder.isTypeSupported("video/mp4; codecs=avc1.42E01E")) {
-        mimeType = "video/mp4; codecs=avc1.42E01E"; // H.264 Baseline
-    } else if (MediaRecorder.isTypeSupported("video/mp4")) {
-        mimeType = "video/mp4"; // Generic MP4
-    }
-
-    const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: mimeType,
-        videoBitsPerSecond: 5000000 // 5 Mbps
-    });
-    
+    let mediaRecorder = null;
+    let mimeType = "video/webm";
     const chunks = [];
-    mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
-    mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        resultVideo.src = url;
-        downloadLink.href = url;
+    if (record) {
+        const stream = renderCanvas.captureStream(fps);
+        if (MediaRecorder.isTypeSupported("video/mp4; codecs=avc1.4d002a")) {
+            mimeType = "video/mp4; codecs=avc1.4d002a";
+        } else if (MediaRecorder.isTypeSupported("video/mp4; codecs=avc1.42E01E")) {
+            mimeType = "video/mp4; codecs=avc1.42E01E";
+        } else if (MediaRecorder.isTypeSupported("video/mp4")) {
+            mimeType = "video/mp4";
+        }
+
+        mediaRecorder = new MediaRecorder(stream, {
+            mimeType: mimeType,
+            videoBitsPerSecond: 5000000
+        });
         
-        // Ensure correct extension based on actual mimeType
-        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        downloadLink.download = `drawing_animation.${ext}`;
+        mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(chunks, { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            resultVideo.src = url;
+            downloadLink.href = url;
+            
+            const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+            downloadLink.download = `drawing_animation.${ext}`;
+            
+            videoOverlay.classList.add('active');
+            showStatus("生成完成");
+            setTimeout(hideStatus, 2000);
+            generateBtn.disabled = false;
+            testBtn.disabled = false;
+        };
         
-        videoOverlay.classList.add('active');
-        showStatus("生成完成");
-        setTimeout(hideStatus, 2000);
-        generateBtn.disabled = false;
-    };
-    
-    mediaRecorder.start();
+        mediaRecorder.start();
+    }
     
     // 4. Loop
     let frame = 0;
@@ -649,83 +1207,16 @@ async function startGeneration() {
     colorMaskCanvas.height = height;
     const colorMaskCtx = colorMaskCanvas.getContext('2d');
     
-    const targetCanvas = document.createElement('canvas');
-    targetCanvas.width = width;
-    targetCanvas.height = height;
-    const tCtx = targetCanvas.getContext('2d');
-    
-    // Draw target to offscreen
-    tCtx.fillStyle = "white";
-    tCtx.fillRect(0, 0, width, height);
-    
-    // Create Line Art Canvas (for Phase 1 of Color Mode)
-    const lineArtCanvas = document.createElement('canvas');
-    lineArtCanvas.width = width;
-    lineArtCanvas.height = height;
-    const lCtx = lineArtCanvas.getContext('2d');
-    lCtx.fillStyle = "white";
-    lCtx.fillRect(0, 0, width, height);
-    
-    if (imgA) {
-        const scale = parseFloat(document.getElementById('scaleRange').value);
-        const fitScale = Math.min(width / imgA.width, height / imgA.height) * 0.8;
-        const finalScale = fitScale * scale;
-        const w = imgA.width * finalScale;
-        const h = imgA.height * finalScale;
-        const x = (width - w) / 2;
-        const y = (height - h) / 2;
-        const contrast = parseInt(document.getElementById('contrastRange').value);
-        
-        // Draw Full Color Target
-        tCtx.filter = `contrast(${100 + contrast}%)`;
-        tCtx.drawImage(imgA, x, y, w, h);
-        tCtx.filter = 'none';
-        
-        // Draw Line Art Target
-        lCtx.drawImage(imgA, x, y, w, h);
-        
-        if (drawMode === 'color') {
-            const imgData = lCtx.getImageData(0, 0, width, height);
-            const data = imgData.data;
-            const saturationThreshold = 30; 
-            const brightnessThreshold = 200; 
-            
-            for(let i = 0; i < data.length; i += 4) {
-                const r = data[i];
-                const g = data[i+1];
-                const b = data[i+2];
-                
-                const max = Math.max(r, g, b);
-                const min = Math.min(r, g, b);
-                const saturation = max - min;
-                const brightness = (r + g + b) / 3;
-                
-                if (saturation > saturationThreshold) {
-                        // Color -> White
-                        data[i] = 255; data[i+1] = 255; data[i+2] = 255;
-                } else {
-                    // Grayscale
-                    if (brightness > brightnessThreshold) {
-                            // White/Light -> White
-                            data[i] = 255; data[i+1] = 255; data[i+2] = 255;
-                    } else {
-                            // Dark -> Dark
-                            const darkVal = brightness < 100 ? 0 : brightness;
-                            data[i] = darkVal; data[i+1] = darkVal; data[i+2] = darkVal;
-                    }
-                }
-            }
-            lCtx.putImageData(imgData, 0, 0);
-        } else {
-                lCtx.filter = `contrast(${100 + contrast}%)`;
-                lCtx.drawImage(imgA, x, y, w, h);
-                lCtx.filter = 'none';
-        }
-    }
-
     function renderFrame() {
         if (frame >= totalFrames) {
-            mediaRecorder.stop();
+            if (record && mediaRecorder) {
+                mediaRecorder.stop();
+            } else {
+                showStatus("预览完成");
+                setTimeout(hideStatus, 1200);
+                generateBtn.disabled = false;
+                testBtn.disabled = false;
+            }
             ctx.globalCompositeOperation = 'source-over';
             return;
         }
@@ -785,7 +1276,11 @@ async function startGeneration() {
         } else if (isColoringPhase) {
             showStatus(`正在填充颜色: ${Math.round(((frame - drawingFrames)/coloringFrames)*100)}%`);
             
-            let endIndex = Math.min(colorPathIndex + colorPointsPerFrame, colorPath.length);
+            colorProgress += colorAdvance;
+            let endIndex = Math.min(Math.floor(colorProgress), colorPath.length);
+            if (endIndex <= colorPathIndex && colorPathIndex < colorPath.length) {
+                endIndex = colorPathIndex + 1;
+            }
             
             // Force completion on last coloring frame
             if (frame === drawingFrames + coloringFrames - 1) {
@@ -852,6 +1347,21 @@ async function startGeneration() {
             
             ctx.globalCompositeOperation = 'source-over';
             ctx.drawImage(tempColor, 0, 0);
+            
+            if (isAutoRepairEnabled && (isRepairPhase || frame >= drawingFrames + coloringFrames + repairFrames)) {
+                let alpha = 0;
+                if (frame >= drawingFrames + coloringFrames + repairFrames) {
+                    alpha = 1.0;
+                } else {
+                    const repairProgress = (frame - drawingFrames - coloringFrames) / repairFrames;
+                    alpha = repairProgress;
+                }
+                if (alpha > 0) {
+                    ctx.globalAlpha = alpha;
+                    ctx.drawImage(targetCanvas, 0, 0);
+                    ctx.globalAlpha = 1.0;
+                }
+            }
             
         } else {
             // Line Mode
@@ -928,39 +1438,3 @@ async function startGeneration() {
     
     renderFrame();
 }
-
-// --- Default Images Loading (New Feature) ---
-function loadDefaultImages() {
-    // Load default Image A
-    const defaultImgA = new Image();
-    defaultImgA.onload = () => {
-        imgA = defaultImgA;
-        updatePreviewA();
-        drawCompositionFrame();
-    };
-    defaultImgA.onerror = () => {
-        console.warn('Default image bLine1.png not found');
-    };
-    // Use the path provided in file listing
-    defaultImgA.src = 'resources/drawPictures/bLine1.png';
-
-    // Load default Image B
-    const defaultImgB = new Image();
-    defaultImgB.onload = () => {
-        imgB = defaultImgB;
-        // Default tip at bottom center or user defined default
-        penTip = { x: 0, y: defaultImgB.height }; 
-        updateProcessedHand();
-        updatePreviewB();
-        drawCompositionFrame();
-    };
-    defaultImgB.onerror = () => {
-        console.warn('Default image pen1.png not found');
-    };
-    defaultImgB.src = 'resources/penPictures/pen1.png';
-}
-
-// Initialize
-window.addEventListener('load', () => {
-    loadDefaultImages();
-});
