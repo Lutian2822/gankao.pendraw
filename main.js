@@ -19,6 +19,7 @@ document.getElementById('strokeRange').addEventListener('input', (e) => updateLa
 document.getElementById('stepRange').addEventListener('input', (e) => updateLabel('stepVal', e.target.value));
 document.getElementById('smoothRange').addEventListener('input', (e) => updateLabel('smoothVal', e.target.value));
 document.getElementById('blurRange').addEventListener('input', (e) => updateLabel('blurVal', e.target.value));
+document.getElementById('colorBrushRange').addEventListener('input', (e) => updateLabel('colorBrushVal', e.target.value));
 
 document.getElementById('handScaleRange').addEventListener('input', (e) => {
     updateLabel('handScaleVal', e.target.value);
@@ -47,6 +48,23 @@ const previewBCanvas = document.getElementById('previewBCanvas');
 const uploadBZone = document.getElementById('uploadBZone');
 const penPreviewWrapper = document.getElementById('penPreviewWrapper');
 const imageBCard = document.getElementById('imageBCard');
+const detailModeToggle = document.getElementById('detailModeToggle');
+const smoothRow = document.getElementById('smoothRow');
+const blurRow = document.getElementById('blurRow');
+const stepRow = document.getElementById('stepRow');
+const colorBrushRow = document.getElementById('colorBrushRow');
+const exportModeToggle = document.getElementById('exportModeToggle');
+const tempOutlineRow = document.getElementById('tempOutlineRow');
+const repairRow = document.getElementById('repairRow');
+const durationRow = document.getElementById('durationRow');
+const holdRow = document.getElementById('holdRow');
+const orderRow = document.getElementById('orderRow');
+const fpsRow = document.getElementById('fpsRow');
+const tempOutlineStepIndex = document.getElementById('tempOutlineStepIndex');
+const durationStepIndex = document.getElementById('durationStepIndex');
+const colorFillStepIndex = document.getElementById('colorFillStepIndex');
+const repairStepIndex = document.getElementById('repairStepIndex');
+const holdStepIndex = document.getElementById('holdStepIndex');
 const penTipMarker = document.getElementById('penTipMarker');
 const renderCanvas = document.getElementById('renderCanvas');
 const generateBtn = document.getElementById('generateBtn');
@@ -72,6 +90,34 @@ const penTipModal = document.getElementById('penTipModal');
 const penTipCancel = document.getElementById('penTipCancel');
 const penTipConfirm = document.getElementById('penTipConfirm');
 const penTipCanvas = document.getElementById('penTipCanvas');
+
+// Theme Switcher Logic
+const themeSwitchBtn = document.getElementById('themeSwitchBtn');
+const sunIcon = document.querySelector('.sun-icon');
+const moonIcon = document.querySelector('.moon-icon');
+
+const setTheme = (theme) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    
+    if (theme === 'dark') {
+        sunIcon.style.display = 'none';
+        moonIcon.style.display = 'block';
+    } else {
+        sunIcon.style.display = 'block';
+        moonIcon.style.display = 'none';
+    }
+};
+
+// Initialize theme
+const savedTheme = localStorage.getItem('theme') || 'light';
+setTheme(savedTheme);
+
+themeSwitchBtn.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+});
 
 // State
 let imgA = null;
@@ -100,7 +146,7 @@ function openTemplateModal(type) {
     templateGrid.innerHTML = '';
     const basePath = type === 'draw' ? 'resources/drawPictures/' : 'resources/penPictures/';
     const prefixes = type === 'draw' ? ['bLine', 'color'] : ['pen'];
-    const maxIndex = 50;
+    const maxIndex = 20;
     prefixes.forEach((prefix) => {
         for (let i = 1; i <= maxIndex; i++) {
             const src = `${basePath}${prefix}${i}.png`;
@@ -140,6 +186,54 @@ if (drawTemplateBtn) {
 }
 if (penTemplateBtn) {
     penTemplateBtn.addEventListener('click', () => openTemplateModal('pen'));
+}
+if (detailModeToggle) {
+    const applyDetailMode = (mode) => {
+        const isAdvanced = mode === 'advanced';
+        if (smoothRow) smoothRow.style.display = isAdvanced ? '' : 'none';
+        if (blurRow) blurRow.style.display = isAdvanced ? '' : 'none';
+        if (stepRow) stepRow.style.display = isAdvanced ? '' : 'none';
+        if (colorBrushRow) colorBrushRow.style.display = isAdvanced ? '' : 'none';
+        detailModeToggle.textContent = isAdvanced ? '高级模式' : '简易模式';
+    };
+    detailModeToggle.addEventListener('click', () => {
+        const nextMode = detailModeToggle.textContent === '简易模式' ? 'advanced' : 'simple';
+        applyDetailMode(nextMode);
+    });
+    applyDetailMode('simple');
+}
+if (exportModeToggle) {
+    const applyExportMode = (mode) => {
+        const isAdvanced = mode === 'advanced';
+        if (tempOutlineRow) tempOutlineRow.style.display = isAdvanced ? '' : 'none';
+        if (colorFillRow) colorFillRow.style.display = isAdvanced ? '' : 'none';
+        if (repairRow) repairRow.style.display = isAdvanced ? '' : 'none';
+        if (durationRow) durationRow.style.display = '';
+        if (holdRow) holdRow.style.display = '';
+        if (fpsRow) fpsRow.style.display = '';
+        if (orderRow) orderRow.style.display = isAdvanced ? '' : 'none';
+        if (tempOutlineStepIndex) {
+            tempOutlineStepIndex.textContent = isAdvanced ? '第1步' : '';
+        }
+        if (durationStepIndex) {
+            durationStepIndex.textContent = isAdvanced ? '第2步' : '第1步';
+        }
+        if (colorFillStepIndex) {
+            colorFillStepIndex.textContent = isAdvanced ? '第3步' : '';
+        }
+        if (repairStepIndex) {
+            repairStepIndex.textContent = isAdvanced ? '第4步' : '';
+        }
+        if (holdStepIndex) {
+            holdStepIndex.textContent = isAdvanced ? '第5步' : '第2步';
+        }
+        exportModeToggle.textContent = isAdvanced ? '高级模式' : '简易模式';
+    };
+    exportModeToggle.addEventListener('click', () => {
+        const nextMode = exportModeToggle.textContent === '简易模式' ? 'advanced' : 'simple';
+        applyExportMode(nextMode);
+    });
+    applyExportMode('simple');
 }
 if (uploadAZone) {
     uploadAZone.addEventListener('click', () => imageAInput.click());
@@ -651,6 +745,7 @@ function splitIntoComponents(points, step, refPoint) {
 
 function sortPointsNatural(points, step) {
     if (points.length === 0) return [];
+    const maxNeighborDistSq = step * step * 2.25;
     let startIndex = 0;
     let minX = Infinity;
     let minY = Infinity;
@@ -707,10 +802,10 @@ function sortPointsNatural(points, step) {
                     }
                 }
             }
-            if (found && minDist < 2500) break;
+            if (found && minDist <= maxNeighborDistSq) break;
         }
         
-        if (nextPoint) {
+        if (nextPoint && minDist <= maxNeighborDistSq) {
             nextPoint.v = true;
             nextPoint.jump = false;
             sortedPath.push(nextPoint);
@@ -752,7 +847,27 @@ function sortPointsNatural(points, step) {
     return sortedPath;
 }
 
-function getDrawingPath(ctx, width, height, threshold, step, refPoint) {
+function extractBoundaryPoints(points, step) {
+    if (points.length === 0) return points;
+    const set = new Set();
+    for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        set.add(`${p.x},${p.y}`);
+    }
+    const boundary = [];
+    for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        const left = `${p.x - step},${p.y}`;
+        const right = `${p.x + step},${p.y}`;
+        const up = `${p.x},${p.y - step}`;
+        const down = `${p.x},${p.y + step}`;
+        const isBoundary = !set.has(left) || !set.has(right) || !set.has(up) || !set.has(down);
+        if (isBoundary) boundary.push(p);
+    }
+    return boundary.length > 0 ? boundary : points;
+}
+
+function getDrawingPath(ctx, width, height, threshold, step, refPoint, order, suppressSolidInterior = false) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
     const points = [];
@@ -769,10 +884,73 @@ function getDrawingPath(ctx, width, height, threshold, step, refPoint) {
     
     if (points.length === 0) return [];
 
-    const components = splitIntoComponents(points, step, refPoint);
+    const rawComponents = splitIntoComponents(points, step, refPoint);
+    const componentsWithCenter = rawComponents.map(pointsArr => {
+        let sumX = 0;
+        let sumY = 0;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        for (let i = 0; i < pointsArr.length; i++) {
+            const p = pointsArr[i];
+            sumX += p.x;
+            sumY += p.y;
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        }
+        const count = pointsArr.length || 1;
+        const centerX = sumX / count;
+        const centerY = sumY / count;
+        const bboxW = Math.max(step, maxX - minX + step);
+        const bboxH = Math.max(step, maxY - minY + step);
+        const approxArea = bboxW * bboxH;
+        const coveredArea = count * step * step;
+        const coverage = coveredArea / Math.max(1, approxArea);
+        const isLargeSolid = suppressSolidInterior && approxArea > 15000 && coverage > 0.35;
+        return { points: pointsArr, centerX, centerY, isLargeSolid };
+    });
+    let orderedComponents;
+    if (order === 'tb') {
+        orderedComponents = componentsWithCenter.slice().sort((a, b) => (a.centerY - b.centerY) || (a.centerX - b.centerX));
+    } else if (order === 'random') {
+        orderedComponents = [];
+        const remaining = componentsWithCenter.slice();
+        if (remaining.length > 0) {
+            let currentIndex = Math.floor(Math.random() * remaining.length);
+            let current = remaining.splice(currentIndex, 1)[0];
+            orderedComponents.push(current);
+            while (remaining.length > 0) {
+                const lastPoints = current.points;
+                const lastPoint = lastPoints[lastPoints.length - 1] || lastPoints[0];
+                let bestIndex = 0;
+                let bestDist = Infinity;
+                for (let i = 0; i < remaining.length; i++) {
+                    const c = remaining[i];
+                    const dx = c.centerX - lastPoint.x;
+                    const dy = c.centerY - lastPoint.y;
+                    const dist = dx * dx + dy * dy;
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestIndex = i;
+                    }
+                }
+                current = remaining.splice(bestIndex, 1)[0];
+                orderedComponents.push(current);
+            }
+        }
+    } else {
+        orderedComponents = componentsWithCenter.slice().sort((a, b) => (a.centerX - b.centerX) || (a.centerY - b.centerY));
+    }
     const mergedPath = [];
-    components.forEach((component) => {
-        const sorted = sortPointsNatural(component, step);
+    orderedComponents.forEach((componentObj) => {
+        let componentPoints = componentObj.points;
+        if (componentObj.isLargeSolid) {
+            componentPoints = extractBoundaryPoints(componentPoints, step);
+        }
+        const sorted = sortPointsNatural(componentPoints, step);
         if (sorted.length > 0) {
             sorted[0].jump = true;
         }
@@ -828,22 +1006,28 @@ function getColoringPath(ctx, width, height, step = 40) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
     const points = [];
+    function isColoredPixel(r, g, b) {
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const saturation = max - min;
+        const brightness = (r + g + b) / 3;
+        if (brightness >= 252) return false;
+        if (saturation > 10 && brightness < 250) return true;
+        if (saturation > 5 && brightness < 245 && brightness > 40) return true;
+        return false;
+    }
     
     let minX = width, minY = height, maxX = 0, maxY = 0;
     let hasContent = false;
     
-    const scanStride = 4;
+    const scanStride = 2;
     for (let y = 0; y < height; y += scanStride) {
         for (let x = 0; x < width; x += scanStride) {
             const i = (y * width + x) * 4;
             const r = data[i];
             const g = data[i+1];
             const b = data[i+2];
-            const max = Math.max(r, g, b);
-            const min = Math.min(r, g, b);
-            const saturation = max - min;
-            const brightness = (r + g + b) / 3;
-            if (saturation > 8 && brightness < 250) {
+            if (isColoredPixel(r, g, b)) {
                 minX = Math.min(minX, x);
                 maxX = Math.max(maxX, x);
                 minY = Math.min(minY, y);
@@ -855,15 +1039,16 @@ function getColoringPath(ctx, width, height, step = 40) {
     
     if (!hasContent) return [];
     
-    minX = Math.max(0, minX - step);
-    maxX = Math.min(width, maxX + step);
-    minY = Math.max(0, minY - step);
-    maxY = Math.min(height, maxY + step);
+    const margin = Math.max(step * 1.5, 40);
+    minX = Math.max(0, minX - margin);
+    maxX = Math.min(width, maxX + margin);
+    minY = Math.max(0, minY - margin);
+    maxY = Math.min(height, maxY + margin);
     
     const areaW = Math.max(1, maxX - minX);
     const areaH = Math.max(1, maxY - minY);
-    const rowStep = Math.min(step, Math.max(12, Math.round(Math.min(areaW, areaH) / 7)));
-    const interpolateStep = Math.max(4, Math.round(rowStep / 3));
+    const rowStep = Math.min(step, Math.max(8, Math.round(Math.min(areaW, areaH) / 10)));
+    const interpolateStep = Math.max(3, Math.round(rowStep / 4));
     
     for (let y = minY; y <= maxY; y += rowStep) {
         const forward = ((y - minY) / rowStep) % 2 === 0;
@@ -880,11 +1065,7 @@ function getColoringPath(ctx, width, height, step = 40) {
             const r = data[i];
             const g = data[i+1];
             const b = data[i+2];
-            const max = Math.max(r, g, b);
-            const min = Math.min(r, g, b);
-            const saturation = max - min;
-            const brightness = (r + g + b) / 3;
-            const colored = saturation > 8 && brightness < 250;
+            const colored = isColoredPixel(r, g, b);
             if (colored) {
                 points.push({x: xi, y: yi});
                 inRun = true;
@@ -987,8 +1168,12 @@ async function startGeneration(options = {}) {
     const step = parseInt(document.getElementById('stepRange').value);
     const smoothIterations = parseInt(document.getElementById('smoothRange').value);
     const blurAmount = parseInt(document.getElementById('blurRange').value);
-    const drawMode = colorFillCheck && colorFillCheck.checked ? 'color' : 'line';
+    const colorBrushWidth = parseInt(document.getElementById('colorBrushRange')?.value || '60');
+    const colorFillEnabled = !!(colorFillCheck && colorFillCheck.checked);
     const tempOutlineEnabled = document.getElementById('tempOutlineCheck')?.checked === true;
+    const drawMode = colorFillEnabled ? 'color' : 'line';
+    const orderInput = document.querySelector('input[name="drawOrder"]:checked');
+    const drawOrder = orderInput ? orderInput.value : 'lr';
     
     // 1. Prepare
     drawCompositionFrame();
@@ -1026,7 +1211,7 @@ async function startGeneration(options = {}) {
         const originalImageData = lCtx.getImageData(0, 0, width, height);
         const originalData = originalImageData.data;
         
-        if (drawMode === 'color') {
+        if (drawMode === 'color' || tempOutlineEnabled) {
             const imgData = lCtx.getImageData(0, 0, width, height);
             const data = imgData.data;
             const originalDataCopy = new Uint8ClampedArray(originalData);
@@ -1073,15 +1258,12 @@ async function startGeneration(options = {}) {
             lCtx.fillRect(0, 0, width, height);
             lCtx.drawImage(imgA, x, y, w, h);
             lCtx.filter = 'none';
-            if (tempOutlineEnabled) {
-                applyTempOutlineToLineArt(lCtx, width, height, originalData);
-            }
         }
     }
 
     // 2. Path Finding
     const penOrigin = { x: width / 2, y: height / 2 };
-    let path = getDrawingPath(lCtx, width, height, threshold, step, penOrigin);
+    let path = getDrawingPath(lCtx, width, height, threshold, step, penOrigin, drawOrder, true);
     let colorPath = [];
     
     if (path.length === 0) {
@@ -1110,7 +1292,7 @@ async function startGeneration(options = {}) {
     const drawingFrames = durationSec * fps;
     
     let coloringFrames = 0;
-    if (drawMode === 'color') {
+    if (colorFillEnabled) {
         const colorDurationSec = parseInt(colorDurationInput ? colorDurationInput.value : 0);
         coloringFrames = colorDurationSec * fps;
     }
@@ -1290,7 +1472,7 @@ async function startGeneration(options = {}) {
             // Draw to Color Mask
             colorMaskCtx.lineCap = 'round';
             colorMaskCtx.lineJoin = 'round';
-            colorMaskCtx.lineWidth = 60; 
+            colorMaskCtx.lineWidth = colorBrushWidth; 
             colorMaskCtx.strokeStyle = "black"; 
             colorMaskCtx.shadowBlur = 20; 
 
@@ -1364,10 +1546,19 @@ async function startGeneration(options = {}) {
             }
             
         } else {
-            // Line Mode
-            ctx.drawImage(maskCanvas, 0, 0);
-            ctx.globalCompositeOperation = 'source-in';
-            ctx.drawImage(targetCanvas, 0, 0);
+            if (tempOutlineEnabled) {
+                const tempLine = document.createElement('canvas');
+                tempLine.width = width; tempLine.height = height;
+                const tlc = tempLine.getContext('2d');
+                tlc.drawImage(maskCanvas, 0, 0);
+                tlc.globalCompositeOperation = 'source-in';
+                tlc.drawImage(lineArtCanvas, 0, 0);
+                ctx.drawImage(tempLine, 0, 0);
+            } else {
+                ctx.drawImage(maskCanvas, 0, 0);
+                ctx.globalCompositeOperation = 'source-in';
+                ctx.drawImage(targetCanvas, 0, 0);
+            }
             ctx.globalCompositeOperation = 'destination-over';
             ctx.fillStyle = "white";
             ctx.fillRect(0, 0, width, height);
