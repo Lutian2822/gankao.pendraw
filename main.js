@@ -69,6 +69,7 @@ const penTipMarker = document.getElementById('penTipMarker');
 const renderCanvas = document.getElementById('renderCanvas');
 const generateBtn = document.getElementById('generateBtn');
 const testBtn = document.getElementById('testBtn');
+const stopBtn = document.getElementById('stopBtn');
 const penRelocateBtn = document.getElementById('penRelocateBtn');
 const drawTemplateBtn = document.getElementById('drawTemplateBtn');
 const penTemplateBtn = document.getElementById('penTemplateBtn');
@@ -125,6 +126,8 @@ let imgB = null;
 let processedHandCanvas = null;
 let penTip = { x: 0, y: 0 };
 let animationId = null;
+let currentMediaRecorder = null;
+let userCanceledPlayback = false;
 const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 1600;
 
@@ -135,6 +138,26 @@ function showStatus(msg) {
 
 function hideStatus() {
     statusIndicator.classList.remove('visible');
+}
+
+function stopCurrentAnimation() {
+    userCanceledPlayback = true;
+    if (animationId) {
+        clearTimeout(animationId);
+        animationId = null;
+    }
+    if (currentMediaRecorder) {
+        try {
+            currentMediaRecorder.stop();
+        } catch (e) {
+            currentMediaRecorder = null;
+        }
+    } else {
+        if (generateBtn) generateBtn.disabled = false;
+        if (testBtn) testBtn.disabled = false;
+        if (stopBtn) stopBtn.disabled = true;
+        hideStatus();
+    }
 }
 
 function closeOverlay() {
@@ -186,6 +209,11 @@ if (drawTemplateBtn) {
 }
 if (penTemplateBtn) {
     penTemplateBtn.addEventListener('click', () => openTemplateModal('pen'));
+}
+if (stopBtn) {
+    stopBtn.addEventListener('click', () => {
+        stopCurrentAnimation();
+    });
 }
 if (detailModeToggle) {
     const applyDetailMode = (mode) => {
@@ -1140,8 +1168,8 @@ generateBtn.addEventListener('click', async () => {
     
     generateBtn.disabled = true;
     testBtn.disabled = true;
+    if (stopBtn) stopBtn.disabled = false;
     showStatus("正在计算绘制路径...");
-    
     setTimeout(() => startGeneration({ record: true }), 100);
 });
 
@@ -1151,6 +1179,7 @@ testBtn.addEventListener('click', async () => {
 
     generateBtn.disabled = true;
     testBtn.disabled = true;
+    if (stopBtn) stopBtn.disabled = false;
     showStatus("正在预览动画...");
 
     setTimeout(() => startGeneration({ record: false }), 100);
@@ -1158,6 +1187,8 @@ testBtn.addEventListener('click', async () => {
 
 async function startGeneration(options = {}) {
     if (animationId) clearTimeout(animationId);
+    userCanceledPlayback = false;
+    currentMediaRecorder = null;
     const record = options.record !== false;
     const ctx = renderCanvas.getContext('2d');
     const width = renderCanvas.width;
@@ -1171,6 +1202,7 @@ async function startGeneration(options = {}) {
     const colorBrushWidth = parseInt(document.getElementById('colorBrushRange')?.value || '60');
     const colorFillEnabled = !!(colorFillCheck && colorFillCheck.checked);
     const tempOutlineEnabled = document.getElementById('tempOutlineCheck')?.checked === true;
+    const blackOutlineEnabled = document.getElementById('blackOutlineCheck')?.checked !== false;
     const drawMode = colorFillEnabled ? 'color' : 'line';
     const orderInput = document.querySelector('input[name="drawOrder"]:checked');
     const drawOrder = orderInput ? orderInput.value : 'lr';
@@ -1263,7 +1295,7 @@ async function startGeneration(options = {}) {
 
     // 2. Path Finding
     const penOrigin = { x: width / 2, y: height / 2 };
-    let path = getDrawingPath(lCtx, width, height, threshold, step, penOrigin, drawOrder, true);
+    let path = getDrawingPath(lCtx, width, height, threshold, step, penOrigin, drawOrder, blackOutlineEnabled);
     let colorPath = [];
     
     if (path.length === 0) {
@@ -1287,14 +1319,19 @@ async function startGeneration(options = {}) {
     }
 
     // 3. Setup Animation
-    const durationSec = parseInt(document.getElementById('durationInput').value);
+    let durationSec = parseInt(document.getElementById('durationInput').value);
     const fps = parseInt(document.getElementById('fpsSelect').value);
-    const drawingFrames = durationSec * fps;
+    if (!Number.isFinite(durationSec) || durationSec <= 0) durationSec = 5;
     
+    let colorDurationSec = parseInt(colorDurationInput ? colorDurationInput.value : 0);
+    if (!Number.isFinite(colorDurationSec) || colorDurationSec < 0) colorDurationSec = 0;
+    let holdDurationSec = parseFloat(document.getElementById('holdDurationInput').value);
+    if (!Number.isFinite(holdDurationSec) || holdDurationSec < 0) holdDurationSec = 0;
+
+    const drawingFrames = Math.max(1, Math.round(durationSec * fps));
     let coloringFrames = 0;
-    if (colorFillEnabled) {
-        const colorDurationSec = parseInt(colorDurationInput ? colorDurationInput.value : 0);
-        coloringFrames = colorDurationSec * fps;
+    if (colorFillEnabled && colorDurationSec > 0) {
+        coloringFrames = Math.round(colorDurationSec * fps);
     }
     // Auto-Repair Logic (New Feature)
     const isAutoRepairEnabled = document.getElementById('repairCheck').checked;
@@ -1304,8 +1341,7 @@ async function startGeneration(options = {}) {
         repairFrames = repairDurationSec * fps;
     }
     
-    const holdDurationSec = parseFloat(document.getElementById('holdDurationInput').value);
-    const holdFrames = holdDurationSec * fps;
+    const holdFrames = Math.round(holdDurationSec * fps);
     const totalFrames = drawingFrames + coloringFrames + repairFrames + holdFrames;
     const pointsPerFrame = Math.ceil(path.length / drawingFrames);
     let colorProgress = 0;
@@ -1346,9 +1382,19 @@ async function startGeneration(options = {}) {
             mimeType: mimeType,
             videoBitsPerSecond: 5000000
         });
+        currentMediaRecorder = mediaRecorder;
+        userCanceledPlayback = false;
         
         mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
         mediaRecorder.onstop = () => {
+            currentMediaRecorder = null;
+            if (userCanceledPlayback) {
+                if (generateBtn) generateBtn.disabled = false;
+                if (testBtn) testBtn.disabled = false;
+                if (stopBtn) stopBtn.disabled = true;
+                hideStatus();
+                return;
+            }
             const blob = new Blob(chunks, { type: mimeType });
             const url = URL.createObjectURL(blob);
             resultVideo.src = url;
@@ -1360,8 +1406,9 @@ async function startGeneration(options = {}) {
             videoOverlay.classList.add('active');
             showStatus("生成完成");
             setTimeout(hideStatus, 2000);
-            generateBtn.disabled = false;
-            testBtn.disabled = false;
+            if (generateBtn) generateBtn.disabled = false;
+            if (testBtn) testBtn.disabled = false;
+            if (stopBtn) stopBtn.disabled = true;
         };
         
         mediaRecorder.start();
@@ -1396,10 +1443,12 @@ async function startGeneration(options = {}) {
             } else {
                 showStatus("预览完成");
                 setTimeout(hideStatus, 1200);
-                generateBtn.disabled = false;
-                testBtn.disabled = false;
+                if (generateBtn) generateBtn.disabled = false;
+                if (testBtn) testBtn.disabled = false;
+                if (stopBtn) stopBtn.disabled = true;
             }
             ctx.globalCompositeOperation = 'source-over';
+             animationId = null;
             return;
         }
         
